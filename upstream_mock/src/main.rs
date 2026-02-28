@@ -1,10 +1,10 @@
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/", get(|| async { "Hello from Upstream!"}));
+    let app = Router::new().route("/", get(|| async { "Hello from Upstream!" }));
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")   
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8080")
         .await
         .unwrap();
 
