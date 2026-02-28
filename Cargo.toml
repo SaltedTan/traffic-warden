@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "proxy",
+    "upstream_mock"
+]
+resolver = "2"
