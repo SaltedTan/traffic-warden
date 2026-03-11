@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::{Router, body::to_bytes, response::IntoResponse};
 use reqwest::Client;
@@ -9,7 +10,12 @@ const UPSTREAM_URL: &str = "http://127.0.0.1:8080";
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
 const MAX_REQUESTS: u32 = 5;
 
-type RateLimitMap = Arc<Mutex<HashMap<String, u32>>>;
+struct ClientState {
+    count: u32,
+    expires_at: Instant,
+}
+
+type RateLimitMap = Arc<Mutex<HashMap<String, ClientState>>>;
 
 #[derive(Clone)]
 struct AppState {
@@ -20,7 +26,23 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     let client = Client::new();
-    let rate_limit = Arc::new(Mutex::new(HashMap::new()));
+    let rate_limit = Arc::new(Mutex::new(HashMap::<String, ClientState>::new()));
+
+    // Clone the Arc so the background task can own a reference to the Mutex
+    let garbage_collector_state = rate_limit.clone();
+
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+
+            let mut map = garbage_collector_state.lock().unwrap();
+            let now = Instant::now();
+
+            map.retain(|_ip, state| state.expires_at > now);
+
+            // Lock drops automatically when this loop iteration ends
+        }
+    });
 
     let state = AppState { client, rate_limit };
 
@@ -46,11 +68,22 @@ async fn proxy_handler(
     let ip = addr.ip().to_string();
 
     {
-        let mut counts = state.rate_limit.lock().unwrap();
-        let count = counts.entry(ip).or_insert(0);
-        *count += 1;
-        if *count > MAX_REQUESTS {
-            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
+        let mut client_states = state.rate_limit.lock().unwrap();
+        let now = Instant::now();
+
+        let client_state = client_states.entry(ip).or_insert_with(|| ClientState {
+            count: 0,
+            expires_at: now + Duration::from_secs(60),
+        });
+
+        if client_state.expires_at < now {
+            client_state.count = 1;
+            client_state.expires_at = now + Duration::from_secs(60);
+        } else {
+            client_state.count += 1;
+            if client_state.count > MAX_REQUESTS {
+                return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
+            }
         }
     }
 
