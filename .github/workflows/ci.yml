@@ -1,0 +1,40 @@
+name: Rust CI
+
+# Trigger the workflow on pushes to the main branch
+# and whenever a Pull Request is opened against main.
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Format, Lint, and Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # 1. Check Formatting: Ensures your code matches standard Rust style guides.
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      # 2. Run Clippy: Rust's incredibly strict linter. 
+      # The '-D warnings' flag tells CI to fail if there is even a single warning.
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # 3. Cargo Check: Verifies that the whole workspace compiles without 
+      # spending the extra time generating the final machine code binaries.
+      - name: Run Cargo Check
+        run: cargo check --workspace
