@@ -8,11 +8,12 @@ use reqwest::Client;
 const PROXY_ADDR: &str = "127.0.0.1:3000";
 const UPSTREAM_URL: &str = "http://127.0.0.1:8080";
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
-const MAX_REQUESTS: u32 = 5;
+const CAPACITY: f32 = 5.0;
+const REFILL_RATE: f32 = 5.0 / 60.0;
 
 struct ClientState {
-    count: u32,
-    expires_at: Instant,
+    tokens: f32,
+    last_updated: Instant,
 }
 
 type RateLimitMap = Arc<Mutex<HashMap<String, ClientState>>>;
@@ -38,7 +39,9 @@ async fn main() {
             let mut map = garbage_collector_state.lock().unwrap();
             let now = Instant::now();
 
-            map.retain(|_ip, state| state.expires_at > now);
+            map.retain(|_ip, state| {
+                (now - state.last_updated).as_secs_f32() <= CAPACITY / REFILL_RATE
+            });
 
             // Lock drops automatically when this loop iteration ends
         }
@@ -72,18 +75,20 @@ async fn proxy_handler(
         let now = Instant::now();
 
         let client_state = client_states.entry(ip).or_insert_with(|| ClientState {
-            count: 0,
-            expires_at: now + Duration::from_secs(60),
+            tokens: 5.0,
+            last_updated: now,
         });
 
-        if client_state.expires_at < now {
-            client_state.count = 1;
-            client_state.expires_at = now + Duration::from_secs(60);
+        let time_elapsed = (now - client_state.last_updated).as_secs_f32();
+        client_state.tokens += time_elapsed * REFILL_RATE;
+        client_state.tokens = f32::min(client_state.tokens, CAPACITY);
+
+        if client_state.tokens >= 1.0 {
+            client_state.tokens -= 1.0;
+            client_state.last_updated = now;
         } else {
-            client_state.count += 1;
-            if client_state.count > MAX_REQUESTS {
-                return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
-            }
+            client_state.last_updated = now;
+            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
         }
     }
 
