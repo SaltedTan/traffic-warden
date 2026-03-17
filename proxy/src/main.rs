@@ -27,6 +27,35 @@ struct AppState {
     rate_limit: RateLimitMap,
 }
 
+impl AppState {
+    /// Checks the rate limit for a given IP.
+    /// Returns `Ok(())` if allowed, or `Err(StatusCode::TOO_MANY_REQUESTS)` if blocked.
+    fn check_rate_limit(&self, ip: &str) -> Result<(), axum::http::StatusCode> {
+        let shard_index = hash_ip(ip) % NUM_SHARDS;
+        let now = Instant::now();
+
+        let mut client_states = self.rate_limit[shard_index].lock().unwrap();
+
+        let client_state = client_states.entry(ip.to_string()).or_insert_with(|| ClientState {
+            tokens: CAPACITY,
+            last_updated: now,
+        });
+
+        let time_elapsed = (now - client_state.last_updated).as_secs_f32();
+        client_state.tokens += time_elapsed * REFILL_RATE;
+        client_state.tokens = f32::min(client_state.tokens, CAPACITY);
+
+        if client_state.tokens >= 1.0 {
+            client_state.tokens -= 1.0;
+            client_state.last_updated = now;
+            Ok(())
+        } else {
+            client_state.last_updated = now;
+            Err(axum::http::StatusCode::TOO_MANY_REQUESTS)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let client = Client::new();
@@ -75,29 +104,7 @@ async fn proxy_handler(
 ) -> Result<axum::response::Response, axum::http::StatusCode> {
     let ip = addr.ip().to_string();
 
-    {
-        let shard_index = hash_ip(&ip) % NUM_SHARDS;
-        let now = Instant::now();
-
-        let mut client_states = state.rate_limit[shard_index].lock().unwrap();
-
-        let client_state = client_states.entry(ip).or_insert_with(|| ClientState {
-            tokens: 5.0,
-            last_updated: now,
-        });
-
-        let time_elapsed = (now - client_state.last_updated).as_secs_f32();
-        client_state.tokens += time_elapsed * REFILL_RATE;
-        client_state.tokens = f32::min(client_state.tokens, CAPACITY);
-
-        if client_state.tokens >= 1.0 {
-            client_state.tokens -= 1.0;
-            client_state.last_updated = now;
-        } else {
-            client_state.last_updated = now;
-            return Err(axum::http::StatusCode::TOO_MANY_REQUESTS);
-        }
-    }
+    state.check_rate_limit(&ip)?;
 
     let (parts, body) = req.into_parts();
     let mut headers = parts.headers;
