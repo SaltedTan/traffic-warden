@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -8,7 +9,6 @@ use axum::{Router, body::to_bytes, response::IntoResponse};
 use reqwest::Client;
 
 const PROXY_ADDR: &str = "127.0.0.1:3000";
-const UPSTREAM_URL: &str = "http://127.0.0.1:8080";
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
 const CAPACITY: f32 = 5.0;
 const REFILL_RATE: f32 = 5.0 / 60.0;
@@ -25,6 +25,8 @@ type RateLimitMap = Arc<[Mutex<HashMap<String, ClientState>>; NUM_SHARDS]>;
 struct AppState {
     client: reqwest::Client,
     rate_limit: RateLimitMap,
+    upstreams: Vec<String>,
+    current_upstream: Arc<AtomicUsize>,
 }
 
 impl AppState {
@@ -83,7 +85,18 @@ async fn main() {
         }
     });
 
-    let state = AppState { client, rate_limit };
+    let upstreams = vec![
+        "http://127.0.0.1:8080".to_string(),
+        "http://127.0.0.1:8081".to_string(),
+        "http://127.0.0.1:8082".to_string(),
+    ];
+
+    let state = AppState {
+        client,
+        rate_limit,
+        upstreams,
+        current_upstream: Arc::new(AtomicUsize::new(0)),
+    };
 
     let app = Router::new().fallback(proxy_handler).with_state(state);
 
@@ -108,6 +121,11 @@ async fn proxy_handler(
 
     state.check_rate_limit(&ip)?;
 
+    let previous_count = state.current_upstream.fetch_add(1, Ordering::Relaxed);
+
+    let target_index = previous_count % state.upstreams.len();
+    let selected_upstream = &state.upstreams[target_index];
+
     let (parts, body) = req.into_parts();
     let mut headers = parts.headers;
     headers.remove(axum::http::header::HOST);
@@ -118,7 +136,7 @@ async fn proxy_handler(
         .map(|pq| pq.as_str())
         .unwrap_or(parts.uri.path());
 
-    let url = format!("{}{}", UPSTREAM_URL, path_query);
+    let url = format!("{}{}", selected_upstream, path_query);
 
     let body_bytes = to_bytes(body, MAX_BODY_SIZE)
         .await
