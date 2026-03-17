@@ -36,10 +36,12 @@ impl AppState {
 
         let mut client_states = self.rate_limit[shard_index].lock().unwrap();
 
-        let client_state = client_states.entry(ip.to_string()).or_insert_with(|| ClientState {
-            tokens: CAPACITY,
-            last_updated: now,
-        });
+        let client_state = client_states
+            .entry(ip.to_string())
+            .or_insert_with(|| ClientState {
+                tokens: CAPACITY,
+                last_updated: now,
+            });
 
         let time_elapsed = (now - client_state.last_updated).as_secs_f32();
         client_state.tokens += time_elapsed * REFILL_RATE;
