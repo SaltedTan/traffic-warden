@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -10,13 +12,14 @@ const UPSTREAM_URL: &str = "http://127.0.0.1:8080";
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
 const CAPACITY: f32 = 5.0;
 const REFILL_RATE: f32 = 5.0 / 60.0;
+const NUM_SHARDS: usize = 64;
 
 struct ClientState {
     tokens: f32,
     last_updated: Instant,
 }
 
-type RateLimitMap = Arc<Mutex<HashMap<String, ClientState>>>;
+type RateLimitMap = Arc<[Mutex<HashMap<String, ClientState>>; NUM_SHARDS]>;
 
 #[derive(Clone)]
 struct AppState {
@@ -27,7 +30,8 @@ struct AppState {
 #[tokio::main]
 async fn main() {
     let client = Client::new();
-    let rate_limit = Arc::new(Mutex::new(HashMap::<String, ClientState>::new()));
+    let shards = std::array::from_fn(|_| Mutex::new(HashMap::<String, ClientState>::new()));
+    let rate_limit = Arc::new(shards);
 
     // Clone the Arc so the background task can own a reference to the Mutex
     let garbage_collector_state = rate_limit.clone();
@@ -35,15 +39,16 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
-
-            let mut map = garbage_collector_state.lock().unwrap();
             let now = Instant::now();
 
-            map.retain(|_ip, state| {
-                (now - state.last_updated).as_secs_f32() <= CAPACITY / REFILL_RATE
-            });
+            for shard in garbage_collector_state.iter() {
+                let mut map = shard.lock().unwrap();
 
-            // Lock drops automatically when this loop iteration ends
+                map.retain(|_ip, state| {
+                    (now - state.last_updated).as_secs_f32() <= CAPACITY / REFILL_RATE
+                });
+                // The lock for this specific shard drops here, before moving to the next one
+            }
         }
     });
 
@@ -71,8 +76,10 @@ async fn proxy_handler(
     let ip = addr.ip().to_string();
 
     {
-        let mut client_states = state.rate_limit.lock().unwrap();
+        let shard_index = hash_ip(&ip) % NUM_SHARDS;
         let now = Instant::now();
+
+        let mut client_states = state.rate_limit[shard_index].lock().unwrap();
 
         let client_state = client_states.entry(ip).or_insert_with(|| ClientState {
             tokens: 5.0,
@@ -125,4 +132,10 @@ async fn proxy_handler(
         .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
 
     Ok((status_code, headers, bytes).into_response())
+}
+
+fn hash_ip(ip: &str) -> usize {
+    let mut hasher = DefaultHasher::new();
+    ip.hash(&mut hasher);
+    hasher.finish() as usize
 }
