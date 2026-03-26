@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::{Router, body::to_bytes, response::IntoResponse};
@@ -25,7 +25,8 @@ type RateLimitMap = Arc<[Mutex<HashMap<String, ClientState>>; NUM_SHARDS]>;
 struct AppState {
     client: reqwest::Client,
     rate_limit: RateLimitMap,
-    upstreams: Vec<String>,
+    all_upstreams: Vec<String>,
+    healthy_upstreams: Arc<RwLock<Vec<String>>>,
     current_upstream: Arc<AtomicUsize>,
 }
 
@@ -66,9 +67,22 @@ async fn main() {
     let shards = std::array::from_fn(|_| Mutex::new(HashMap::<String, ClientState>::new()));
     let rate_limit = Arc::new(shards);
 
-    // Clone the Arc so the background task can own a reference to the Mutex
-    let garbage_collector_state = rate_limit.clone();
+    let upstreams = vec![
+        "http://127.0.0.1:8080".to_string(),
+        "http://127.0.0.1:8081".to_string(),
+        "http://127.0.0.1:8082".to_string(),
+    ];
 
+    let state = AppState {
+        client,
+        rate_limit,
+        healthy_upstreams: Arc::new(RwLock::new(upstreams.clone())),
+        all_upstreams: upstreams,
+        current_upstream: Arc::new(AtomicUsize::new(0)),
+    };
+
+    // Clone the Arc so the background task can own a reference to the Mutex
+    let garbage_collector_state = state.rate_limit.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
@@ -85,21 +99,36 @@ async fn main() {
         }
     });
 
-    let upstreams = vec![
-        "http://127.0.0.1:8080".to_string(),
-        "http://127.0.0.1:8081".to_string(),
-        "http://127.0.0.1:8082".to_string(),
-    ];
+    let health_checker_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
 
-    let state = AppState {
-        client,
-        rate_limit,
-        upstreams,
-        current_upstream: Arc::new(AtomicUsize::new(0)),
-    };
+            let mut new_healthy_list = Vec::new();
+
+            for upstream in &health_checker_state.all_upstreams {
+                let ping_url = format!("{}/", upstream);
+
+                let result = health_checker_state
+                    .client
+                    .get(&ping_url)
+                    .timeout(Duration::from_secs(2))
+                    .send()
+                    .await;
+
+                if let Ok(res) = result {
+                    if res.status().is_success() {
+                        new_healthy_list.push(upstream.clone());
+                    }
+                }
+            }
+
+            let mut current_healthy = health_checker_state.healthy_upstreams.write().unwrap();
+            *current_healthy = new_healthy_list;
+        }
+    });
 
     let app = Router::new().fallback(proxy_handler).with_state(state);
-
     let listener = tokio::net::TcpListener::bind(PROXY_ADDR).await.unwrap();
 
     println!("Traffic Warden Proxy Listening on http://{}", PROXY_ADDR);
@@ -121,10 +150,18 @@ async fn proxy_handler(
 
     state.check_rate_limit(&ip)?;
 
-    let previous_count = state.current_upstream.fetch_add(1, Ordering::Relaxed);
+    let selected_upstream = {
+        let healthy = state.healthy_upstreams.read().unwrap();
 
-    let target_index = previous_count % state.upstreams.len();
-    let selected_upstream = &state.upstreams[target_index];
+        if healthy.is_empty() {
+            return Err(axum::http::StatusCode::BAD_GATEWAY);
+        }
+
+        let previous_count = state.current_upstream.fetch_add(1, Ordering::Relaxed);
+        let target_index = previous_count % healthy.len();
+
+        healthy[target_index].clone()
+    };
 
     let (parts, body) = req.into_parts();
     let mut headers = parts.headers;
