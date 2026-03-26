@@ -2,7 +2,7 @@
 
 A lightweight, high-performance, and thread-safe HTTP reverse proxy built in Rust.
 
-Traffic Warden acts as a defensive layer for upstream services, implementing a concurrent **Token Bucket** rate limiter, **lock-free round-robin load balancing**, and automated memory management. It is designed to handle high-throughput traffic without succumbing to data races, socket exhaustion, or out-of-memory (OOM) leaks.
+Traffic Warden acts as a defensive layer for upstream services, implementing a concurrent **Token Bucket** rate limiter, **lock-free round-robin load balancing**, **active health checking with automatic failover**, and automated memory management. It is designed to handle high-throughput traffic without succumbing to data races, socket exhaustion, or out-of-memory (OOM) leaks.
 
 ## Architecture & Workspace
 
@@ -13,7 +13,8 @@ This project is structured as a Cargo Workspace containing two distinct services
 
 ## Key Features
 
-* **Lock-Free Round-Robin Load Balancing:** Distributes requests across a pool of upstream servers using an `AtomicUsize` counter with `Ordering::Relaxed`, achieving zero-contention scheduling without any mutex overhead on the hot path.
+* **Lock-Free Round-Robin Load Balancing:** Distributes requests across a pool of **healthy** upstream servers using an `AtomicUsize` counter with `Ordering::Relaxed`, achieving zero-contention scheduling without any mutex overhead on the hot path.
+* **Active Health Checking & Automatic Failover:** A background `tokio::spawn` task pings every upstream every 10 seconds with a 2-second timeout. The healthy upstream list is maintained behind an `Arc<RwLock<Vec<String>>>`, allowing readers (request handlers) to proceed concurrently while the health checker holds a brief write lock to swap in the updated list. If all upstreams are down, the proxy immediately returns `502 Bad Gateway`.
 * **Thread-Safe State Management via Lock Striping:** Tracks concurrent client IPs and token balances using a custom sharded concurrent map (`Arc<[Mutex<HashMap>; 64]>`). Incoming requests are deterministically hashed and routed to specific shards, allowing true multi-core concurrent processing.
 * **Token Bucket Traffic Shaping:** Replaces naive fixed time-windows with a continuous Token Bucket algorithm using precise time-delta calculations (`f32`). This completely mitigates boundary-burst exploits.
 * **Asynchronous Garbage Collection:** A detached `tokio::spawn` background worker wakes up periodically to sweep expired IP allocations. It iterates through the 64 shards sequentially, locking and cleaning one at a time to prevent global blocking and maintain a stable RAM footprint.
@@ -29,6 +30,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
 * **In-Memory vs. Redis:** To demonstrate low-level systems synchronization, the rate limit state is held entirely in-memory using standard library synchronization primitives rather than offloading to an external Redis cluster.
 * **Header Sanitization:** Strips internal `Host` headers before forwarding to ensure compatibility with strict upstream load balancers and ingress controllers.
 * **Atomic Load Balancing Over Mutex-Guarded Routing:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering rather than wrapping the upstream index in a `Mutex`. Since strict sequential ordering across cores is unnecessary for load distribution, `Relaxed` avoids memory fence overhead while still guaranteeing atomicity.
+* **`RwLock` Over `Mutex` for Health State:** The healthy upstream list is read on every request but written only once every 10 seconds. An `RwLock` allows all request handlers to read concurrently without blocking each other, while the health checker briefly acquires a write lock to swap in the new list. A `Mutex` here would serialize every request behind the same lock, reintroducing contention on the hot path.
 
 ## Quick Start
 
