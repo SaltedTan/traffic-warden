@@ -2,21 +2,22 @@
 
 A lightweight, high-performance, and thread-safe HTTP reverse proxy built in Rust.
 
-Traffic Warden acts as a defensive layer for upstream services, implementing a concurrent **Token Bucket** rate limiter with automated memory management. It is designed to handle high-throughput traffic without succumbing to data races, socket exhaustion, or out-of-memory (OOM) leaks.
+Traffic Warden acts as a defensive layer for upstream services, implementing a concurrent **Token Bucket** rate limiter, **lock-free round-robin load balancing**, and automated memory management. It is designed to handle high-throughput traffic without succumbing to data races, socket exhaustion, or out-of-memory (OOM) leaks.
 
 ## Architecture & Workspace
 
 This project is structured as a Cargo Workspace containing two distinct services:
 
 1. **`proxy`**: The core reverse proxy service implementing Axum, Tokio, and thread-safe state.
-2. **`upstream_mock`**: A lightweight HTTP backend server used to validate proxy forwarding.
+2. **`upstream_mock`**: A lightweight multi-node HTTP backend that spawns 3 servers (ports 8080, 8081, 8082) to simulate a cluster and validate proxy forwarding and load distribution.
 
 ## Key Features
 
+* **Lock-Free Round-Robin Load Balancing:** Distributes requests across a pool of upstream servers using an `AtomicUsize` counter with `Ordering::Relaxed`, achieving zero-contention scheduling without any mutex overhead on the hot path.
 * **Thread-Safe State Management via Lock Striping:** Tracks concurrent client IPs and token balances using a custom sharded concurrent map (`Arc<[Mutex<HashMap>; 64]>`). Incoming requests are deterministically hashed and routed to specific shards, allowing true multi-core concurrent processing.
-* * **Token Bucket Traffic Shaping:** Replaces naive fixed time-windows with a continuous Token Bucket algorithm using precise time-delta calculations (`f32`). This completely mitigates boundary-burst exploits.
+* **Token Bucket Traffic Shaping:** Replaces naive fixed time-windows with a continuous Token Bucket algorithm using precise time-delta calculations (`f32`). This completely mitigates boundary-burst exploits.
 * **Asynchronous Garbage Collection:** A detached `tokio::spawn` background worker wakes up periodically to sweep expired IP allocations. It iterates through the 64 shards sequentially, locking and cleaning one at a time to prevent global blocking and maintain a stable RAM footprint.
-* * **Connection Pooling:** Reuses a single `reqwest::Client` internal pool to prevent ephemeral TCP socket exhaustion under heavy load.
+* **Connection Pooling:** Reuses a single `reqwest::Client` internal pool to prevent ephemeral TCP socket exhaustion under heavy load.
 * **Defensive Edge Boundaries:** Implements strict 5MB payload size limits to mitigate malicious OOM attacks.
 
 ## Engineering Decisions & Trade-offs
@@ -27,6 +28,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
 * **RAII and Safe Lock Release:** To prevent deadlocks in the async runtime, the `MutexGuard` for the rate-limit state is explicitly confined to a lexical scope block. We rely on Rust's `Drop` trait (Resource Acquisition Is Initialization) to implicitly and safely release locks during early `HTTP 429` returns, keeping lock contention in the microsecond range.
 * **In-Memory vs. Redis:** To demonstrate low-level systems synchronization, the rate limit state is held entirely in-memory using standard library synchronization primitives rather than offloading to an external Redis cluster.
 * **Header Sanitization:** Strips internal `Host` headers before forwarding to ensure compatibility with strict upstream load balancers and ingress controllers.
+* **Atomic Load Balancing Over Mutex-Guarded Routing:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering rather than wrapping the upstream index in a `Mutex`. Since strict sequential ordering across cores is unnecessary for load distribution, `Relaxed` avoids memory fence overhead while still guaranteeing atomicity.
 
 ## Quick Start
 
@@ -43,8 +45,8 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
    cd traffic-warden
    ```
 
-2. **Start the Upstream Mock Server:**
-   Open a terminal and run the mock backend (listens on port 8080):
+2. **Start the Upstream Mock Cluster:**
+   Open a terminal and run the mock backend (spawns 3 servers on ports 8080, 8081, and 8082):
 
    ```bash
    cargo run -p upstream_mock
@@ -57,7 +59,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
    cargo run -p proxy
    ```
 
-4. **Test the Rate Limiter:**
+4. **Test Rate Limiting and Load Balancing:**
    Hit the proxy with `curl`. By default, the bucket has a capacity of **5 tokens** and refills at a rate of **1 token every 12 seconds**.
 
    ```bash
@@ -65,11 +67,11 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
    curl -v http://127.0.0.1:3000
    ```
 
-   *Requests 1-5 will consume the initial tokens and return `200 OK` from the upstream.*
+   *Requests 1-5 will consume the initial tokens and return `200 OK`. Each response body will identify a different upstream port (8080, 8081, 8082) as the round-robin balancer cycles through the pool.*
 
    *Request 6 will be intercepted and return `429 Too Many Requests`.*
 
-   *Wait 12 seconds, and exactly 1 new request request will be allowed through.*
+   *Wait 12 seconds, and exactly 1 new request will be allowed through.*
 
 ## Built With
 
