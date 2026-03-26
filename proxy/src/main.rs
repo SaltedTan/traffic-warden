@@ -117,9 +117,10 @@ async fn main() {
                     .await;
 
                 if let Ok(res) = result
-                    && res.status().is_success() {
-                        new_healthy_list.push(upstream.clone());
-                    }
+                    && res.status().is_success()
+                {
+                    new_healthy_list.push(upstream.clone());
+                }
             }
 
             let mut current_healthy = health_checker_state.healthy_upstreams.write().unwrap();
