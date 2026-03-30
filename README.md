@@ -8,7 +8,7 @@ Traffic Warden acts as a defensive layer for upstream services, implementing a c
 
 This project is structured as a Cargo Workspace containing two distinct services:
 
-1. **`proxy`**: The core reverse proxy service implementing Axum, Tokio, and thread-safe state.
+1. **`proxy`**: The core reverse proxy service. Internally modularized to decouple state management, HTTP handlers, and background workers, utilizing Axum and Tokio for high-concurrency routing.
 2. **`upstream_mock`**: A lightweight multi-node HTTP backend that spawns 3 servers (ports 8080, 8081, 8082) to simulate a cluster and validate proxy forwarding and load distribution.
 
 ## Key Features
@@ -31,7 +31,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
 * **Header Sanitization:** Strips internal `Host` headers before forwarding to ensure compatibility with strict upstream load balancers and ingress controllers.
 * **Atomic Load Balancing Over Mutex-Guarded Routing:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering rather than wrapping the upstream index in a `Mutex`. Since strict sequential ordering across cores is unnecessary for load distribution, `Relaxed` avoids memory fence overhead while still guaranteeing atomicity.
 * **`RwLock` Over `Mutex` for Health State:** The healthy upstream list is read on every request but written only once every 10 seconds. An `RwLock` allows all request handlers to read concurrently without blocking each other, while the health checker briefly acquires a write lock to swap in the new list. A `Mutex` here would serialize every request behind the same lock, reintroducing contention on the hot path.
-
+* **Separation of Concerns for Testability:** The proxy codebase is strictly modularized (`state`, `handler`, `workers`). By decoupling the Axum `Router` construction and background daemons from the main TCP binding, the architecture supports headless integration testing without port conflicts, maintaining a clean boundary between state management, network I/O, and routing logic.
 ## Quick Start
 
 ### Prerequisites
@@ -43,7 +43,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
 1. **Clone the repository:**
 
    ```bash
-   git clone [https://github.com/yourusername/traffic-warden.git](https://github.com/yourusername/traffic-warden.git)
+   git clone [https://github.com/SaltedTan/traffic-warden.git](https://github.com/SaltedTan/traffic-warden.git)
    cd traffic-warden
    ```
 
