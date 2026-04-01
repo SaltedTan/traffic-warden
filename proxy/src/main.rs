@@ -1,18 +1,8 @@
-use axum::Router;
-
-mod handler;
-mod state;
-mod workers;
-
-use handler::proxy_handler;
-use state::AppState;
-use workers::spawn_background_workers;
+use proxy::build_app;
+use proxy::state::AppState;
+use proxy::workers::spawn_background_workers;
 
 const PROXY_ADDR: &str = "127.0.0.1:3000";
-
-pub fn build_app(state: AppState) -> Router {
-    Router::new().fallback(proxy_handler).with_state(state)
-}
 
 #[tokio::main]
 async fn main() {
