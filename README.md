@@ -19,7 +19,7 @@ This project is structured as a Cargo Workspace containing two distinct services
 * **Token Bucket Traffic Shaping:** Replaces naive fixed time-windows with a continuous Token Bucket algorithm using precise time-delta calculations (`f32`). This completely mitigates boundary-burst exploits.
 * **Asynchronous Garbage Collection:** A detached `tokio::spawn` background worker wakes up periodically to sweep expired IP allocations. It iterates through the 64 shards sequentially, locking and cleaning one at a time to prevent global blocking and maintain a stable RAM footprint.
 * **Connection Pooling:** Reuses a single `reqwest::Client` internal pool to prevent ephemeral TCP socket exhaustion under heavy load.
-* **Defensive Edge Boundaries:** Implements strict 5MB payload size limits to mitigate malicious OOM attacks.
+* **Asynchronous HTTP Body Streaming:** Replaces naive in-memory payload buffering with chunk-by-chunk byte streaming using `http-util-body` and the `reqwest` stream feature. This provides true non-blocking Network I/O, allowing the proxy to route gigabytes of data with a completely flat, near-zero memory footprint, natively eliminating Out-Of-Memory (OOM) vulnerabilities.
 
 ## Engineering Decisions & Trade-offs
 
@@ -32,6 +32,7 @@ Building a concurrent proxy requires strict adherence to memory and thread safet
 * **Atomic Load Balancing Over Mutex-Guarded Routing:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering rather than wrapping the upstream index in a `Mutex`. Since strict sequential ordering across cores is unnecessary for load distribution, `Relaxed` avoids memory fence overhead while still guaranteeing atomicity.
 * **`RwLock` Over `Mutex` for Health State:** The healthy upstream list is read on every request but written only once every 10 seconds. An `RwLock` allows all request handlers to read concurrently without blocking each other, while the health checker briefly acquires a write lock to swap in the new list. A `Mutex` here would serialize every request behind the same lock, reintroducing contention on the hot path.
 * **Separation of Concerns for Testability:** The proxy codebase is strictly modularized (`state`, `handler`, `workers`). By decoupling the Axum `Router` construction and background daemons from the main TCP binding, the architecture supports headless integration testing without port conflicts, maintaining a clean boundary between state management, network I/O, and routing logic.
+* **True Network Streaming over RAM Buffering:** Rather than buffering entire requests and responses into RAM to enforce hard payload size limits (which creates a massive memory bottleneck under load), the proxy pipes data chunk-by-chunk directly between the client and the upstream. This mirrors the behavior of enterprise proxies like Nginx and Envoy, trading a naive byte-counting limit for infinite payload capacity without crashing the server.
 ## Quick Start
 
 ### Prerequisites
