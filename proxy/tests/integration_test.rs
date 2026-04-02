@@ -122,22 +122,3 @@ async fn test_round_robin_distribution() {
     assert!(responses.contains(&"Server B".to_string()));
     assert!(responses.contains(&"Server C".to_string()));
 }
-
-#[tokio::test]
-async fn test_payload_size_limit() {
-    let upstream_url = spawn_mock_upstream().await;
-    let proxy_url = spawn_proxy(vec![upstream_url]).await;
-
-    let client = reqwest::Client::new();
-
-    let massive_payload = "A".repeat(6 * 1024 * 1024);
-
-    let response = client
-        .post(&proxy_url)
-        .body(massive_payload)
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
-}

@@ -1,8 +1,6 @@
 use crate::state::AppState;
-use axum::{body::to_bytes, response::IntoResponse};
+use axum::{body::Body, response::IntoResponse};
 use std::sync::atomic::Ordering;
-
-pub const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
 
 pub async fn proxy_handler(
     axum::extract::State(state): axum::extract::State<AppState>,
@@ -38,25 +36,21 @@ pub async fn proxy_handler(
 
     let url = format!("{}{}", selected_upstream, path_query);
 
-    let body_bytes = to_bytes(body, MAX_BODY_SIZE)
-        .await
-        .map_err(|_| axum::http::StatusCode::PAYLOAD_TOO_LARGE)?;
+    let reqwest_body = reqwest::Body::wrap_stream(body.into_data_stream());
 
     let response = state
         .client
         .request(parts.method, url)
         .headers(headers)
-        .body(body_bytes)
+        .body(reqwest_body)
         .send()
         .await
         .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
 
     let status_code = response.status();
     let headers = response.headers().clone();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
+    let response_stream = response.bytes_stream();
+    let axum_body = Body::from_stream(response_stream);
 
-    Ok((status_code, headers, bytes).into_response())
+    Ok((status_code, headers, axum_body).into_response())
 }
