@@ -8,14 +8,25 @@ pub fn spawn_background_workers(state: AppState) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             let now = Instant::now();
+            let max_age_secs = CAPACITY / REFILL_RATE;
 
-            for shard in garbage_collector_state.iter() {
-                let mut map = shard.lock().unwrap();
+            #[cfg(not(feature = "single-lock"))]
+            {
+                for shard in garbage_collector_state.iter() {
+                    let mut map = shard.lock().unwrap();
+                    map.retain(|_ip, state| {
+                        (now - state.last_updated).as_secs_f32() <= max_age_secs
+                    });
+                    // The lock for this specific shard drops here, before moving to the next one
+                }
+            }
 
+            #[cfg(feature = "single-lock")]
+            {
+                let mut map = garbage_collector_state.lock().unwrap();
                 map.retain(|_ip, state| {
-                    (now - state.last_updated).as_secs_f32() <= CAPACITY / REFILL_RATE
+                    (now - state.last_updated).as_secs_f32() <= max_age_secs
                 });
-                // The lock for this specific shard drops here, before moving to the next one
             }
         }
     });
