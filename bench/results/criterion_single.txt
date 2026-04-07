@@ -1,0 +1,43 @@
+   Compiling proxy v0.1.0 (/home/seanthz/projects/rust/traffic-warden/proxy)
+    Finished `bench` profile [optimized] target(s) in 1.38s
+     Running benches/rate_limit_bench.rs (target/release/deps/rate_limit_bench-adf6d4edd3ca4e35)
+Gnuplot not found, using plotters backend
+Benchmarking rate_limit/check_rate_limit/1_threads
+Benchmarking rate_limit/check_rate_limit/1_threads: Warming up for 3.0000 s
+Benchmarking rate_limit/check_rate_limit/1_threads: Collecting 100 samples in estimated 9.8211 s (10k iterations)
+Benchmarking rate_limit/check_rate_limit/1_threads: Analyzing
+rate_limit/check_rate_limit/1_threads
+                        time:   [978.57 µs 982.26 µs 985.84 µs]
+                        change: [−8.7732% −8.3778% −7.9659%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Benchmarking rate_limit/check_rate_limit/2_threads
+Benchmarking rate_limit/check_rate_limit/2_threads: Warming up for 3.0000 s
+Benchmarking rate_limit/check_rate_limit/2_threads: Collecting 100 samples in estimated 5.1849 s (1800 iterations)
+Benchmarking rate_limit/check_rate_limit/2_threads: Analyzing
+rate_limit/check_rate_limit/2_threads
+                        time:   [2.8884 ms 2.9092 ms 2.9307 ms]
+                        change: [+88.298% +89.986% +91.585%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+Benchmarking rate_limit/check_rate_limit/4_threads
+Benchmarking rate_limit/check_rate_limit/4_threads: Warming up for 3.0000 s
+Benchmarking rate_limit/check_rate_limit/4_threads: Collecting 100 samples in estimated 5.1923 s (400 iterations)
+Benchmarking rate_limit/check_rate_limit/4_threads: Analyzing
+rate_limit/check_rate_limit/4_threads
+                        time:   [12.485 ms 12.655 ms 12.818 ms]
+                        change: [+530.70% +546.83% +561.69%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 15 outliers among 100 measurements (15.00%)
+  1 (1.00%) low severe
+  14 (14.00%) low mild
+Benchmarking rate_limit/check_rate_limit/8_threads
+Benchmarking rate_limit/check_rate_limit/8_threads: Warming up for 3.0000 s
+Benchmarking rate_limit/check_rate_limit/8_threads: Collecting 100 samples in estimated 5.5294 s (200 iterations)
+Benchmarking rate_limit/check_rate_limit/8_threads: Analyzing
+rate_limit/check_rate_limit/8_threads
+                        time:   [27.251 ms 27.402 ms 27.550 ms]
+                        change: [+1000.7% +1017.5% +1033.4%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+

@@ -1,0 +1,149 @@
+    Updating crates.io index
+     Locking 36 packages to latest compatible versions
+      Adding aho-corasick v1.1.4
+      Adding alloca v0.4.0
+      Adding anes v0.1.6
+      Adding anstyle v1.0.14
+      Adding autocfg v1.5.0
+      Adding cast v0.3.0
+      Adding ciborium v0.2.2
+      Adding ciborium-io v0.2.2
+      Adding ciborium-ll v0.2.2
+      Adding clap v4.6.0
+      Adding clap_builder v4.6.0
+      Adding clap_lex v1.1.0
+      Adding criterion v0.8.2
+      Adding criterion-plot v0.8.2
+      Adding crossbeam-deque v0.8.6
+      Adding crossbeam-epoch v0.9.18
+      Adding crossbeam-utils v0.8.21
+      Adding crunchy v0.2.4
+      Adding either v1.15.0
+      Adding half v2.7.1
+      Adding itertools v0.13.0
+      Adding num-traits v0.2.19
+      Adding oorandom v11.1.5
+      Adding page_size v0.6.0
+      Adding plotters v0.3.7
+      Adding plotters-backend v0.3.7
+      Adding plotters-svg v0.3.7
+      Adding rayon v1.11.0
+      Adding rayon-core v1.13.0
+      Adding regex v1.12.3
+      Adding regex-automata v0.4.14
+      Adding regex-syntax v0.8.10
+      Adding tinytemplate v1.2.1
+      Adding winapi v0.3.9
+      Adding winapi-i686-pc-windows-gnu v0.4.0
+      Adding winapi-x86_64-pc-windows-gnu v0.4.0
+ Downloading crates ...
+  Downloaded cast v0.3.0
+  Downloaded alloca v0.4.0
+  Downloaded page_size v0.6.0
+  Downloaded plotters-svg v0.3.7
+  Downloaded same-file v1.0.6
+  Downloaded ciborium-ll v0.2.2
+  Downloaded crossbeam-deque v0.8.6
+  Downloaded ciborium-io v0.2.2
+  Downloaded plotters-backend v0.3.7
+  Downloaded tinytemplate v1.2.1
+  Downloaded walkdir v2.5.0
+  Downloaded oorandom v11.1.5
+  Downloaded ciborium v0.2.2
+  Downloaded half v2.7.1
+  Downloaded criterion-plot v0.8.2
+  Downloaded rayon-core v1.13.0
+  Downloaded anes v0.1.6
+  Downloaded zerocopy-derive v0.8.47
+  Downloaded regex v1.12.3
+  Downloaded criterion v0.8.2
+  Downloaded plotters v0.3.7
+  Downloaded itertools v0.13.0
+  Downloaded aho-corasick v1.1.4
+  Downloaded rayon v1.11.0
+  Downloaded regex-automata v0.4.14
+   Compiling serde v1.0.228
+   Compiling crossbeam-utils v0.8.21
+   Compiling zerocopy v0.8.47
+   Compiling autocfg v1.5.0
+   Compiling either v1.15.0
+   Compiling rayon-core v1.13.0
+   Compiling regex-syntax v0.8.10
+   Compiling anstyle v1.0.14
+   Compiling clap_lex v1.1.0
+   Compiling ciborium-io v0.2.2
+   Compiling plotters-backend v0.3.7
+   Compiling cast v0.3.0
+   Compiling same-file v1.0.6
+   Compiling serde_derive v1.0.228
+   Compiling zerocopy-derive v0.8.47
+   Compiling alloca v0.4.0
+   Compiling page_size v0.6.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling walkdir v2.5.0
+   Compiling clap_builder v4.6.0
+   Compiling itertools v0.13.0
+   Compiling plotters-svg v0.3.7
+   Compiling num-traits v0.2.19
+   Compiling crossbeam-epoch v0.9.18
+   Compiling crossbeam-deque v0.8.6
+   Compiling plotters v0.3.7
+   Compiling regex-automata v0.4.14
+   Compiling rayon v1.11.0
+   Compiling criterion-plot v0.8.2
+   Compiling clap v4.6.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling tinytemplate v1.2.1
+   Compiling reqwest v0.13.2
+   Compiling axum v0.8.8
+   Compiling regex v1.12.3
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling ciborium v0.2.2
+   Compiling criterion v0.8.2
+   Compiling proxy v0.1.0 (/home/seanthz/projects/rust/traffic-warden/proxy)
+    Finished `bench` profile [optimized] target(s) in 10.75s
+     Running benches/rate_limit_bench.rs (target/release/deps/rate_limit_bench-a16e81c97d405279)
+Gnuplot not found, using plotters backend
+Benchmarking rate_limit/check_rate_limit/1_threads
+Benchmarking rate_limit/check_rate_limit/1_threads: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 5.4s, enable flat sampling, or reduce sample count to 60.
+Benchmarking rate_limit/check_rate_limit/1_threads: Collecting 100 samples in estimated 5.4101 s (5050 iterations)
+Benchmarking rate_limit/check_rate_limit/1_threads: Analyzing
+rate_limit/check_rate_limit/1_threads
+                        time:   [1.0717 ms 1.0764 ms 1.0808 ms]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+Benchmarking rate_limit/check_rate_limit/2_threads
+Benchmarking rate_limit/check_rate_limit/2_threads: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 7.7s, enable flat sampling, or reduce sample count to 50.
+Benchmarking rate_limit/check_rate_limit/2_threads: Collecting 100 samples in estimated 7.7354 s (5050 iterations)
+Benchmarking rate_limit/check_rate_limit/2_threads: Analyzing
+rate_limit/check_rate_limit/2_threads
+                        time:   [1.5288 ms 1.5401 ms 1.5527 ms]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+Benchmarking rate_limit/check_rate_limit/4_threads
+Benchmarking rate_limit/check_rate_limit/4_threads: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 9.6s, enable flat sampling, or reduce sample count to 50.
+Benchmarking rate_limit/check_rate_limit/4_threads: Collecting 100 samples in estimated 9.5733 s (5050 iterations)
+Benchmarking rate_limit/check_rate_limit/4_threads: Analyzing
+rate_limit/check_rate_limit/4_threads
+                        time:   [1.9144 ms 1.9586 ms 2.0130 ms]
+Found 18 outliers among 100 measurements (18.00%)
+  2 (2.00%) high mild
+  16 (16.00%) high severe
+Benchmarking rate_limit/check_rate_limit/8_threads
+Benchmarking rate_limit/check_rate_limit/8_threads: Warming up for 3.0000 s
+Benchmarking rate_limit/check_rate_limit/8_threads: Collecting 100 samples in estimated 5.2208 s (1900 iterations)
+Benchmarking rate_limit/check_rate_limit/8_threads: Analyzing
+rate_limit/check_rate_limit/8_threads
+                        time:   [2.4202 ms 2.4522 ms 2.4872 ms]
+Found 9 outliers among 100 measurements (9.00%)
+  9 (9.00%) high mild
+
