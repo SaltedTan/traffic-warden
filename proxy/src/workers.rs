@@ -24,9 +24,7 @@ pub fn spawn_background_workers(state: AppState) {
             #[cfg(feature = "single-lock")]
             {
                 let mut map = garbage_collector_state.lock().unwrap();
-                map.retain(|_ip, state| {
-                    (now - state.last_updated).as_secs_f32() <= max_age_secs
-                });
+                map.retain(|_ip, state| (now - state.last_updated).as_secs_f32() <= max_age_secs);
             }
         }
     });
