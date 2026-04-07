@@ -21,18 +21,34 @@ This project is structured as a Cargo Workspace containing two distinct services
 * **Connection Pooling:** Reuses a single `reqwest::Client` internal pool to prevent ephemeral TCP socket exhaustion under heavy load.
 * **Asynchronous HTTP Body Streaming:** Replaces naive in-memory payload buffering with chunk-by-chunk byte streaming using `http-util-body` and the `reqwest` stream feature. This provides true non-blocking Network I/O, allowing the proxy to route gigabytes of data with a completely flat, near-zero memory footprint, natively eliminating Out-Of-Memory (OOM) vulnerabilities.
 
+## Performance
+
+All benchmarks were run on Intel Core i7-14700KF, 3400 MHz, 20 Cores running Ubuntu 24.04 on WSL2 with Rust 1.94.0 stable (release mode).
+
+### System Throughput (oha)
+
+End-to-end benchmarks using [oha](https://github.com/hatoo/oha) against the full proxy with 3 upstream mock servers. Rate limiting disabled via the `bench` feature flag.
+
+Both lock-striped and single-mutex designs achieve comparable system throughput (~1.1M req/s at 500 connections) because the network round-trip to upstream servers dominates lock hold time at this layer.
+
+### Rate Limiter Microbenchmark (Criterion)
+
+To isolate the rate-limiting hot path from network I/O, a [Criterion](https://github.com/bheisler/criterion.rs) microbenchmark calls `check_rate_limit()` directly from multiple threads (10,000 unique IPs per thread).
+
+At 8 threads, the 64-shard lock-striped design completes in ~3ms compared to ~25ms for a single mutex — an **~8x improvement** — confirming that lock striping eliminates contention as the bottleneck shifts from I/O to CPU-bound state access.
+
+![Benchmark Results](bench/results/benchmark.png)
+
 ## Engineering Decisions & Trade-offs
 
-Building a concurrent proxy requires strict adherence to memory and thread safety. Key decisions include:
+* **Lock Striping Over Global Locks:** Instead of using a single global `Mutex` (which causes severe thread queuing under DDoS conditions) or outsourcing to a black-box crate like `dashmap`, the rate limiter shards its state across 64 independent Mutexes. Requests are deterministically hashed to specific shards, reducing lock contention by ~8x at 8 threads as confirmed by [microbenchmarks](#performance).
 
-* **Lock Striping Over Global Locks or External Crates:** Instead of using a single global `Mutex` (which causes severe thread queuing under DDoS conditions) or outsourcing the problem to a black-box crate like `dashmap`, the rate limiter shards its state across 64 independent Mutexes. Using a deterministic IP hashing function, requests are routed to specific shards, reducing lock contention by ~98% and preventing the Tokio thread pool from blocking.
-* **RAII and Safe Lock Release:** To prevent deadlocks in the async runtime, the `MutexGuard` for the rate-limit state is explicitly confined to a lexical scope block. We rely on Rust's `Drop` trait (Resource Acquisition Is Initialization) to implicitly and safely release locks during early `HTTP 429` returns, keeping lock contention in the microsecond range.
-* **In-Memory vs. Redis:** To demonstrate low-level systems synchronization, the rate limit state is held entirely in-memory using standard library synchronization primitives rather than offloading to an external Redis cluster.
-* **Header Sanitization:** Strips internal `Host` headers before forwarding to ensure compatibility with strict upstream load balancers and ingress controllers.
-* **Atomic Load Balancing Over Mutex-Guarded Routing:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering rather than wrapping the upstream index in a `Mutex`. Since strict sequential ordering across cores is unnecessary for load distribution, `Relaxed` avoids memory fence overhead while still guaranteeing atomicity.
-* **`RwLock` Over `Mutex` for Health State:** The healthy upstream list is read on every request but written only once every 10 seconds. An `RwLock` allows all request handlers to read concurrently without blocking each other, while the health checker briefly acquires a write lock to swap in the new list. A `Mutex` here would serialize every request behind the same lock, reintroducing contention on the hot path.
-* **Separation of Concerns for Testability:** The proxy codebase is strictly modularized (`state`, `handler`, `workers`). By decoupling the Axum `Router` construction and background daemons from the main TCP binding, the architecture supports headless integration testing without port conflicts, maintaining a clean boundary between state management, network I/O, and routing logic.
-* **True Network Streaming over RAM Buffering:** Rather than buffering entire requests and responses into RAM to enforce hard payload size limits (which creates a massive memory bottleneck under load), the proxy pipes data chunk-by-chunk directly between the client and the upstream. This mirrors the behavior of enterprise proxies like Nginx and Envoy, trading a naive byte-counting limit for infinite payload capacity without crashing the server.
+* **Atomic Load Balancing & RwLock Health State:** The round-robin counter uses `AtomicUsize::fetch_add` with `Relaxed` ordering for zero-contention scheduling, while the healthy upstream list uses an `RwLock` to allow concurrent reads on every request with a brief write lock only once every 10 seconds. Together, these keep the hot path entirely lock-free.
+
+* **True Network Streaming over RAM Buffering:** Rather than buffering entire payloads into RAM, the proxy pipes data chunk-by-chunk between client and upstream, mirroring Nginx and Envoy behavior. This provides infinite payload capacity with a flat, near-zero memory footprint.
+
+* **In-Memory Synchronization Primitives:** Rate limit state is held entirely in-memory using standard library primitives rather than offloading to Redis, demonstrating low-level concurrent systems design from first principles.
+
 ## Quick Start
 
 ### Prerequisites
